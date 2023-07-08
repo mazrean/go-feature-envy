@@ -1,7 +1,6 @@
 package gofeatureenvy
 
 import (
-	"fmt"
 	"go/token"
 	"go/types"
 
@@ -91,6 +90,26 @@ func run(pass *analysis.Pass) (any, error) {
 						structMetrics.foreignAccess++
 						structMetrics.foreignStructMap[instr.X.Type()] = struct{}{}
 					}
+				default:
+					for _, v := range instr.Operands(nil) {
+						if v == nil {
+							continue
+						}
+
+						switch v := (*v).(type) {
+						case *ssa.Function:
+							if v.Signature == nil || v.Signature.Recv() == nil {
+								continue
+							}
+
+							if v.Signature.Recv().Type() == namedType {
+								structMetrics.localAccess++
+							} else {
+								structMetrics.foreignAccess++
+								structMetrics.foreignStructMap[v.Signature.Recv().Type()] = struct{}{}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -101,7 +120,6 @@ func run(pass *analysis.Pass) (any, error) {
 		laa := float64(structMetrics.localAccess) / float64(structMetrics.foreignAccess+structMetrics.localAccess)
 		fdp := len(structMetrics.foreignStructMap)
 
-		fmt.Printf("atfd: %d, laa: %f, fdp: %d\n", atfd, laa, fdp)
 		if atfd > few && laa < 1.0/3 && fdp <= few {
 			pass.Reportf(structMetrics.pos, "feature envy")
 		}
